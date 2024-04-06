@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
+	"image/color"
+	"log"
+	"math/rand"
+	"time"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"image/color"
-	"math/rand"
-	"time"
 )
 
 type GameObject struct {
@@ -24,11 +25,39 @@ var (
 	score         int
 	scoreLabel    *canvas.Text
 	gameOverLabel *canvas.Text
+	gameRunning   bool = true
+	gameObjects   *fyne.Container
+	enemyImageResource fyne.Resource
+	explosionImageResource fyne.Resource
+	spaceshipImageResource fyne.Resource
+	backgroundImageResource fyne.Resource
 )
+
+func loadResources() {
+	var err error
+	enemyImageResource, err = fyne.LoadResourceFromPath("enemy.png")
+	if err != nil {
+		log.Fatal("Failed to load enemy image:", err)
+	}
+	explosionImageResource, err = fyne.LoadResourceFromPath("explosion.png")
+	if err != nil {
+		log.Fatal("Failed to load explosion image:", err)
+	}
+	spaceshipImageResource, err = fyne.LoadResourceFromPath("spaceship.png")
+	if err != nil {
+		log.Fatal("Failed to load spaceship image:", err)
+	}
+	backgroundImageResource, err = fyne.LoadResourceFromPath("space_background.png")
+	if err!=nil{
+		log.Fatal("Failed to load space_background image:", err)
+	}
+}
 
 func main() {
 	myApp := app.New()
 	myWindow := myApp.NewWindow("Space Traveler")
+
+	loadResources()
 
 	icon, err := fyne.LoadResourceFromPath("spaceship.png")
 	if err != nil {
@@ -37,18 +66,18 @@ func main() {
 	}
 	myWindow.SetIcon(icon)
 
-	backgroundImage := canvas.NewImageFromFile("space_background.png")
+	backgroundImage := canvas.NewImageFromResource(backgroundImageResource)
 	backgroundImage.FillMode = canvas.ImageFillStretch
 
-	gameObjects := container.NewWithoutLayout()
+	gameObjects = container.NewWithoutLayout()
 
 	spaceship = &GameObject{
-		image:  canvas.NewImageFromFile("spaceship.png"),
+		image:  canvas.NewImageFromResource(spaceshipImageResource),
 		speed:  fyne.NewPos(0, 0),
 		active: true,
 	}
 	spaceship.image.Resize(fyne.NewSize(50, 50))
-	spaceship.image.Move(fyne.NewPos(275, 350))
+	spaceship.image.Move(fyne.NewPos(265, 350))
 	gameObjects.Add(spaceship.image)
 
 	scoreLabel = canvas.NewText("Score: 0", color.White)
@@ -79,8 +108,15 @@ func main() {
 func generateEnemies(content *fyne.Container, window fyne.Window) {
 	for {
 		time.Sleep(4 * time.Second)
+		if !gameRunning {
+			return
+		}
 		enemy := createEnemy()
 		enemies = append(enemies, enemy)
+
+		if !gameRunning {
+			return
+		}
 		content.Add(enemy.image)
 		window.Content().Refresh()
 	}
@@ -156,8 +192,8 @@ func checkBulletCollision(bullet *GameObject, content *fyne.Container, window fy
 }
 
 func showExplosionAt(pos fyne.Position, content *fyne.Container, window fyne.Window) {
-	explosion := canvas.NewImageFromFile("explosion.png")
-	explosion.Resize(fyne.NewSize(50, 50))
+	explosion := canvas.NewImageFromResource(explosionImageResource)
+	explosion.Resize(fyne.NewSize(40, 40))
 	explosion.Move(pos)
 	content.Add(explosion)
 	go func() {
@@ -180,6 +216,9 @@ func overlapping(obj1, obj2 fyne.CanvasObject) bool {
 }
 
 func handleKeyInput(e *fyne.KeyEvent, content *fyne.Container, window fyne.Window) {
+	if !gameRunning {
+		return
+	}
 	pos := spaceship.image.Position()
 	switch e.Name {
 	case fyne.KeyLeft:
@@ -190,14 +229,6 @@ func handleKeyInput(e *fyne.KeyEvent, content *fyne.Container, window fyne.Windo
 		if pos.X < 550 {
 			spaceship.image.Move(fyne.NewPos(pos.X+10, pos.Y))
 		}
-	case fyne.KeyUp:
-		if pos.Y > 10 {
-			spaceship.image.Move(fyne.NewPos(pos.X, pos.Y-10))
-		}
-	case fyne.KeyDown:
-		if pos.Y < 350 {
-			spaceship.image.Move(fyne.NewPos(pos.X, pos.Y+10))
-		}
 	case fyne.KeySpace:
 		bullet := createBullet()
 		bullets = append(bullets, bullet)
@@ -207,8 +238,8 @@ func handleKeyInput(e *fyne.KeyEvent, content *fyne.Container, window fyne.Windo
 }
 
 func createEnemy() *GameObject {
-	enemyImage := canvas.NewImageFromFile("enemy.png")
-	enemyImage.Resize(fyne.NewSize(40, 40))
+	enemyImage := canvas.NewImageFromResource(enemyImageResource)
+	enemyImage.Resize(fyne.NewSize(36, 18))
 	initialX := rand.Float32() * 550
 	enemy := &GameObject{
 		image:  enemyImage,
@@ -233,10 +264,24 @@ func createBullet() *GameObject {
 }
 
 func endGame(window fyne.Window) {
+	gameRunning = false
+
+	for _, enemy := range enemies {
+		enemy.active = false
+		gameObjects.Remove(enemy.image)
+	}
+	enemies = []*GameObject{}
+
+	for _, bullet := range bullets {
+		bullet.active = false
+		gameObjects.Remove(bullet.image)
+	}
+	bullets = []*GameObject{}
+
 	gameOverLabel.Hidden = false
 	gameOverLabel.Refresh()
 
-	scoreLabel.Move(fyne.NewPos(250, 230))
+	scoreLabel.Move(fyne.NewPos(200, 240))
 	scoreLabel.Refresh()
 
 	window.Content().Refresh()
